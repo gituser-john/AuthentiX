@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { ethers } from 'ethers';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../constants/contract';
 
@@ -76,7 +76,9 @@ export default function TransferScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled">
       <View style={styles.contentWrapper}>
         
         <Text style={styles.pageTitle}>Transfer.</Text>
@@ -153,7 +155,7 @@ export default function TransferScreen() {
           </View>
         )}
       </View>
-    </View>
+    </ScrollView>
   );
 }
 

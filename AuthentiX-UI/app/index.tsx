@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, Platform } from 'react-native';
 import BackgroundPipes from '../components/BackgroundPipes';
 
 // === THE FULL-LENGTH 40-CHAR NODE TERMINAL ===
@@ -51,13 +51,15 @@ const LiveNodeTerminal = () => {
   }, []);
 
   return (
-    <View style={styles.terminalContainer}>
+    <ScrollView contentContainerStyle={styles.terminalContainer}
+    showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled">
       <View style={styles.terminalHeader}>
         <View style={styles.liveIndicator} />
         <Text style={styles.terminalTitle}>NODE ACTIVE : SYNCING BLOCKS</Text>
       </View>
       <Text style={styles.terminalText}>{displayedHash}</Text>
-    </View>
+    </ScrollView>
   );
 };
 

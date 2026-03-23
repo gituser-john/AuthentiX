@@ -1,10 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
+import {ScrollView, View, Text, StyleSheet, Pressable, Platform } from 'react-native';
 import { Link, Slot } from 'expo-router';
 
 export default function RootLayout() {
   return (
-    <View style={styles.masterContainer}>
+    <ScrollView style={styles.masterContainer}
+    showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled">
       
       {/* The Floating Apple-Style Nav Pill */}
       <View style={styles.navWrapper}>
@@ -31,7 +33,7 @@ export default function RootLayout() {
       <View style={styles.pageContent}>
         <Slot />
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
