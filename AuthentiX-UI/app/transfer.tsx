@@ -1,20 +1,23 @@
 import React, { useState } from 'react';
-import { ScrollView, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
 import { ethers } from 'ethers';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../constants/contract';
 
 export default function TransferScreen() {
   const [walletAddress, setWalletAddress] = useState("");
   
-  // Form States
   const [transferId, setTransferId] = useState("");
   const [newOwnerAddress, setNewOwnerAddress] = useState("");
   
-  // New UI States
   const [isTransferring, setIsTransferring] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [txDetails, setTxDetails] = useState<any>(null);
+
+  const [isScanning, setIsScanning] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
+  const { width, height } = Dimensions.get('window');
 
   const connectWallet = async () => {
     const win = window as any;
@@ -28,6 +31,55 @@ export default function TransferScreen() {
     } else {
       setErrorMessage("MetaMask is not installed. Please install it to continue.");
     }
+  };
+
+  const openScanner = async () => {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        alert("Camera permission is required to scan QR passports.");
+        return;
+      }
+    }
+    setIsScanning(true);
+  };
+
+  const processScan = async (scannedData: string) => {
+    setIsScanning(false);
+    
+    try {
+      const parsedQR = JSON.parse(scannedData);
+      if (parsedQR.id) {
+        setTransferId(String(parsedQR.id));
+        return;
+      }
+    } catch (e) {
+    }
+
+    if (scannedData.startsWith("0x") && scannedData.length === 66) {
+      try {
+        const win = window as any;
+        const provider = new ethers.BrowserProvider(win.ethereum);
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
+        const receipt = await provider.getTransactionReceipt(scannedData);
+        
+        if (receipt) {
+          for (const log of receipt.logs) {
+            try {
+              const parsed = contract.interface.parseLog(log);
+              if (parsed && parsed.name === "ProductMinted") {
+                setTransferId(parsed.args.id.toString());
+                return;
+              }
+            } catch (err) {}
+          }
+        }
+      } catch (err) {
+        console.error("Failed to parse hash:", err);
+      }
+    }
+
+    setTransferId(scannedData);
   };
 
   const handleTransfer = async () => {
@@ -75,6 +127,25 @@ export default function TransferScreen() {
     }
   };
 
+  if (isScanning) {
+    return (
+      <View style={{ width: width, height: height, backgroundColor: '#000', position: 'absolute', top: 0, left: 0, zIndex: 999 }}>
+        <CameraView 
+          style={{ flex: 1, width: '100%', height: '100%' }}
+          facing="front" 
+          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          onBarcodeScanned={({ data }) => processScan(data)}
+        />
+        <View style={styles.cameraOverlay}>
+          <Text style={styles.cameraText}>Scan Asset QR to Autofill ID</Text>
+          <Pressable style={styles.closeCameraButton} onPress={() => setIsScanning(false)}>
+            <Text style={styles.closeCameraText}>Cancel Scan</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
@@ -101,14 +172,12 @@ export default function TransferScreen() {
               <Text style={styles.walletText}>CURRENT OWNER: {walletAddress.substring(0, 6)}...{walletAddress.substring(38)}</Text>
             </View>
 
-            {/* --- INLINE ERROR BANNER --- */}
             {errorMessage ? (
               <View style={styles.errorBanner}>
                 <Text style={styles.errorBannerText}>⚠ {errorMessage}</Text>
               </View>
             ) : null}
 
-            {/* --- SUCCESS RECEIPT CARD --- */}
             {txDetails ? (
               <View style={styles.successCard}>
                 <View style={styles.successIcon}><Text style={{fontSize: 30}}>🤝</Text></View>
@@ -128,11 +197,21 @@ export default function TransferScreen() {
                 </Pressable>
               </View>
             ) : (
-              // --- THE FORM ---
               <>
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>PRODUCT ID</Text>
-                  <TextInput style={styles.input} placeholder="e.g., 1" placeholderTextColor="#A0AEC0" value={transferId} onChangeText={setTransferId} keyboardType="numeric" />
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TextInput 
+                      style={[styles.input, { flex: 1 }]} 
+                      placeholder="Enter ID or Scan QR" 
+                      placeholderTextColor="#A0AEC0" 
+                      value={transferId} 
+                      onChangeText={setTransferId} 
+                    />
+                    <Pressable style={styles.scanButton} onPress={openScanner}>
+                      <Text style={styles.scanButtonText}>📷</Text>
+                    </Pressable>
+                  </View>
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -184,8 +263,15 @@ const styles = StyleSheet.create({
 
   inputGroup: { marginBottom: 25 },
   inputLabel: { fontSize: 11, fontWeight: '800', color: '#A0AEC0', letterSpacing: 1.5, marginBottom: 8, marginLeft: 5 },
-  input: { width: '100%', backgroundColor: '#F7FAFC', padding: 20, borderRadius: 16, fontSize: 16, color: '#1A202C', fontWeight: '500', borderWidth: 1, borderColor: '#EDF2F7' },
+  input: { backgroundColor: '#F7FAFC', padding: 20, borderRadius: 16, fontSize: 16, color: '#1A202C', fontWeight: '500', borderWidth: 1, borderColor: '#EDF2F7' },
   
+  scanButton: { backgroundColor: '#F7FAFC', paddingHorizontal: 20, justifyContent: 'center', borderRadius: 16, borderWidth: 1, borderColor: '#EDF2F7' },
+  scanButtonText: { fontSize: 22 },
+  cameraOverlay: { position: 'absolute', bottom: 50, width: '100%', alignItems: 'center' },
+  cameraText: { color: '#FFF', fontSize: 16, fontWeight: '800', marginBottom: 20, backgroundColor: 'rgba(0,0,0,0.6)', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, overflow: 'hidden' },
+  closeCameraButton: { backgroundColor: '#FF3B30', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 30 },
+  closeCameraText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+
   submitButton: { backgroundColor: '#000000', width: '100%', paddingVertical: 20, borderRadius: 16, alignItems: 'center', marginTop: 10, transition: 'all 0.2s ease' } as any,
   submitButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
   buttonHover: { transform: [{ translateY: -2 }], shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20 },
@@ -193,7 +279,6 @@ const styles = StyleSheet.create({
   transferringState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 20, marginTop: 10 },
   transferringText: { marginTop: 15, fontSize: 12, fontWeight: '800', color: '#4A5568', letterSpacing: 2 },
 
-  // Success Receipt Styles
   successCard: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 40, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.05, shadowRadius: 40, elevation: 10 },
   successIcon: { width: 70, height: 70, backgroundColor: '#EBF8FF', borderRadius: 35, alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
   successTitle: { fontSize: 24, fontWeight: '900', color: '#1A202C', marginBottom: 10, textAlign: 'center' },

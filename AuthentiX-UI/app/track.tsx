@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import { ScrollView, View, Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Alert, Dimensions } from 'react-native';
 import { ethers } from 'ethers';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from '../constants/contract';
-
+const { width, height } = Dimensions.get('window');
 const ContinuousDecryptor = () => {
   const [displayedHash, setDisplayedHash] = useState("0x----------");
 
@@ -55,9 +56,12 @@ export default function TrackScreen() {
   const [isSearching, setIsSearching] = useState(false);
   const [fetchedProduct, setFetchedProduct] = useState<any>(null);
   const [hasStarted, setHasStarted] = useState(false);
+  
+  const [isScanning, setIsScanning] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
 
-  const handleSearch = async () => {
-    if (!searchId) return;
+  const processSearch = async (targetValue: string) => {
+    if (!targetValue) return;
     
     setHasStarted(true);
     setFetchedProduct(null);
@@ -68,9 +72,30 @@ export default function TrackScreen() {
       const provider = new ethers.BrowserProvider(win.ethereum);
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
       
+      let finalProductId = targetValue.trim();
+
+      if (finalProductId.startsWith("0x") && finalProductId.length === 66) {
+        const receipt = await provider.getTransactionReceipt(finalProductId);
+        if (!receipt) throw new Error("Transaction not found on the blockchain.");
+
+        let parsedId = null;
+        for (const log of receipt.logs) {
+          try {
+            const parsed = contract.interface.parseLog(log);
+            if (parsed && parsed.name === "ProductMinted") {
+              parsedId = parsed.args.id.toString();
+              break;
+            }
+          } catch (e) { }
+        }
+        
+        if (!parsedId) throw new Error("No product ID found in this transaction.");
+        finalProductId = parsedId;
+      }
+
       const [product, history] = await Promise.all([
-        contract.getProduct(searchId),
-        contract.getOwnershipHistory(searchId),
+        contract.getProduct(finalProductId),
+        contract.getOwnershipHistory(finalProductId),
         new Promise(resolve => setTimeout(resolve, 1500)) 
       ]);
       
@@ -82,13 +107,51 @@ export default function TrackScreen() {
         owner: product[4],
         history: history
       });
+      
+      setSearchId(finalProductId);
+
     } catch (error) {
       console.error("Search failed:", error);
-      alert("Product not found! Ensure the ID exists on the blockchain.");
+      alert("Asset not found! Ensure the ID or QR Code is valid.");
     } finally {
       setIsSearching(false);
     }
   };
+
+  const handleManualSearch = () => processSearch(searchId);
+
+  const openScanner = async () => {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        alert("Camera permission is required to scan QR passports.");
+        return;
+      }
+    }
+    setIsScanning(true);
+  };
+
+  if (isScanning) {
+    return (
+      <View style={{ flex: 1, width: width, height: height, backgroundColor: '#000', position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 999 }}>
+        <CameraView 
+          style={{ flex: 1, width: width, height: height }}
+          facing="front" // 🚀 Webcams use the front camera!
+          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          onBarcodeScanned={({ data }) => {
+            setIsScanning(false);
+            processSearch(data);
+          }}
+        />
+        <View style={styles.cameraOverlay}>
+          <Text style={styles.cameraText}>Align QR Passport in frame...</Text>
+          <Pressable style={styles.closeCameraButton} onPress={() => setIsScanning(false)}>
+            <Text style={styles.closeCameraText}>Cancel Scan</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView 
@@ -107,17 +170,19 @@ export default function TrackScreen() {
         <View style={styles.inputGroup}>
           <TextInput 
             style={styles.input} 
-            placeholder="Enter Product ID (e.g., 1)" 
+            placeholder="Enter Product ID or Scan QR" 
             placeholderTextColor="#A0AEC0"
             value={searchId} 
             onChangeText={setSearchId} 
-            keyboardType="numeric"
           />
+          <Pressable style={styles.scanButton} onPress={openScanner}>
+            <Text style={styles.scanButtonText}>📷</Text>
+          </Pressable>
           <Pressable 
             style={({ hovered }) => [styles.button, hovered && styles.buttonHover]} 
-            onPress={handleSearch}
+            onPress={handleManualSearch}
           >
-            <Text style={styles.buttonText}>Verify Provenance</Text>
+            <Text style={styles.buttonText}>Verify</Text>
           </Pressable>
         </View>
 
@@ -193,10 +258,18 @@ const styles = StyleSheet.create({
   badgeText: { fontFamily: 'monospace', color: '#FFFFFF', fontSize: 15, fontWeight: '700', letterSpacing: 2 },
   
   inputGroup: { flexDirection: 'row', gap: 10, marginBottom: 40 },
-  input: { flex: 1, backgroundColor: '#FFFFFF', padding: 20, borderRadius: 16, fontSize: 18, color: '#1A202C', fontWeight: '600', borderWidth: 1, borderColor: '#EDF2F7' },
-  button: { backgroundColor: '#000000', paddingHorizontal: 30, justifyContent: 'center', borderRadius: 16 },
+  input: { flex: 1, backgroundColor: '#FFFFFF', padding: 15, borderRadius: 16, fontSize: 16, color: '#1A202C', fontWeight: '600', borderWidth: 1, borderColor: '#EDF2F7' },
+  scanButton: { backgroundColor: '#F7FAFC', paddingHorizontal: 15, justifyContent: 'center', borderRadius: 16, borderWidth: 1, borderColor: '#EDF2F7' },
+  scanButtonText: { fontSize: 22 },
+  button: { backgroundColor: '#000000', paddingHorizontal: 25, justifyContent: 'center', borderRadius: 16 },
   buttonHover: { transform: [{ translateY: -2 }], shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 20 },
   buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+
+  cameraContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  cameraOverlay: { position: 'absolute', bottom: 50, alignItems: 'center' },
+  cameraText: { color: '#FFF', fontSize: 16, fontWeight: '800', marginBottom: 20, backgroundColor: 'rgba(0,0,0,0.6)', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, overflow: 'hidden' },
+  closeCameraButton: { backgroundColor: '#FF3B30', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 30 },
+  closeCameraText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 
   resultsArea: { flex: 1, justifyContent: 'flex-start', alignItems: 'center', paddingBottom: 40 },
 
