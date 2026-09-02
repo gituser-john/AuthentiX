@@ -20,11 +20,11 @@ Counterfeit products cost the global economy billions annually and pose severe r
 ## 🛠️ Tech Stack
 
 **Frontend & User Interface:**
-*   React Native (Expo Web)[cite: 2]
+*   React Native (Expo Web)
 *   TypeScript
 
 **Web3 & Blockchain:**
-*   Solidity (Smart Contracts)[cite: 2]
+*   Solidity (Smart Contracts)
 *   Polygon Amoy Testnet (Layer-2 EVM Network)
 *   Ethers.js & MetaMask (Wallet Authentication & Cryptographic Signing)
 
